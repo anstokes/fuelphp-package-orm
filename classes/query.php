@@ -356,7 +356,7 @@ class Query
 	}
 
 	/**
-	/* normalize the select fields passed
+	 * normalize the select fields passed
 	 *
 	 * @param  array  list of columns to select
 	 * @param  int    counter of the number of selected columnss
@@ -420,14 +420,25 @@ class Query
 					// add the index as the column name
 					else
 					{
-						$select[$this->alias.'_c'.$i++] = array($value, $index);
+						//$select[$this->alias.'_c'.$i++] = array($value, $index);
+						$select[$index] = array($value, $index);
 					}
 				}
 
 				// must be a regular field
 				else
 				{
-					$select[$this->alias.'_c'.$i++] = (strpos($value, '.') === false ? $this->alias.'.' : '').$value;
+					// no column name given for the result?
+					if (is_numeric($index))
+					{
+						$select[$this->alias.'_c'.$i++] = (strpos($value, '.') === false ? $this->alias.'.' : '').$value;
+					}
+
+					// add the index as the column name
+					else
+					{
+						$select[$index] = array((strpos($value, '.') === false ? $this->alias.'.' : '').$value, $index);
+					}
 				}
 			}
 		}

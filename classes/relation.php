@@ -80,18 +80,55 @@ abstract class Relation
 	 * Should get the properties as associative array with alias => property, the table alias is
 	 * given to be included with the property
 	 *
-	 * @param   string
+	 * @param	string	$table		Table name
+	 * @param	array	$fields		Specific fields to select
 	 * @return  array
 	 */
-	public function select($table)
+	public function select($table, $fields = [])
 	{
 		$props = call_user_func(array($this->model_to, 'properties'));
 		$i = 0;
 		$properties = array();
-		foreach ($props as $pk => $pv)
-		{
-			$properties[] = array($table.'.'.$pk, $table.'_c'.$i);
-			$i++;
+
+		// Check if specific fields are requested
+		if ($fields) {
+			// Ensure primary key(s) included; they are essential for the relationshop
+			$primary_keys = call_user_func(array($this->model_to, 'primary_key'));
+			if ($missing_primary_keys = array_diff($primary_keys, $fields)) {
+				// Add any missing primary key(s)
+				$fields = array_merge($fields, $missing_primary_keys);
+			}
+
+			foreach ($fields as $index => $field) {
+				if (! is_numeric($index)) {
+					$alias = $index;
+				} else {
+					$alias = $table.'_c'.$i;
+					$i++;
+				}
+
+				$properties[] = array($table.'.'.$field, $alias);
+			}
+		} else {
+			foreach ($props as $pk => $pv) {
+				$alias = $table . '_c' . $i;
+
+				// Check if specific fields are required
+				if ($fields) {
+					if (!in_array($pk, $fields)) {
+						// Skip this column
+						continue;
+					}
+
+					$named_column = \Arr::search($fields, $pk);
+					if (!is_numeric($named_column)) {
+						$alias = $named_column;
+					}
+				}
+
+				$properties[] = array($table . '.' . $pk, $alias);
+				$i++;
+			}
 		}
 
 		return $properties;

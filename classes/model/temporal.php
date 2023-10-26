@@ -296,7 +296,7 @@ class Model_Temporal extends Model
 	 * @param array $options
 	 * @return type
 	 */
-	public static function find($id = null, array $options = array())
+	public static function find($id = null, ?array $options = null)
 	{
 		$timestamp_end_name = static::temporal_property('end_column');
 		$max_timestamp = static::temporal_property('max_timestamp');
@@ -638,7 +638,7 @@ class Model_Temporal extends Model
 	/**
 	 * Returns true if the PK checking should be performed. Defaults to true
 	 */
-	private static function get_primary_key_status()
+	protected static function get_primary_key_status()
 	{
 		$class = get_called_class();
 		return \Arr::get(self::$_pk_check_disabled, $class, true);
@@ -647,7 +647,7 @@ class Model_Temporal extends Model
 	/**
 	 * Returns true if the PK should only contain the ID. Defaults to false
 	 */
-	private static function get_primary_key_id_only_status()
+	protected static function get_primary_key_id_only_status()
 	{
 		$class = get_called_class();
 		return \Arr::get(self::$_pk_id_only, $class, false);
