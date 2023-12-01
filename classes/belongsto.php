@@ -76,17 +76,17 @@ class BelongsTo extends Relation
 	{
 		$alias_to = 't'.$alias_to_nr;
 		$model = array(
-			'model'       => $this->model_to,
-			'connection'  => call_user_func(array($this->model_to, 'connection')),
-			'table'       => array(call_user_func(array($this->model_to, 'table')), $alias_to),
-			'primary_key' => call_user_func(array($this->model_to, 'primary_key')),
-			'join_type'   => \Arr::get($conditions, 'join_type') ?: \Arr::get($this->conditions, 'join_type', 'left'),
-			'join_on'     => array(),
-			'columns'     => $this->select($alias_to),
-			'rel_name'    => strpos($rel_name, '.') ? substr($rel_name, strrpos($rel_name, '.') + 1) : $rel_name,
-			'relation'    => $this,
-			'where'       => \Arr::get($conditions, 'where', array()),
-			'order_by'    => \Arr::get($conditions, 'order_by') ?: \Arr::get($this->conditions, 'order_by', array()),
+			'model'        => $this->model_to,
+			'connection'   => call_user_func(array($this->model_to, 'connection')),
+			'table'        => array(call_user_func(array($this->model_to, 'table')), $alias_to),
+			'primary_key'  => call_user_func(array($this->model_to, 'primary_key')),
+			'join_type'    => \Arr::get($conditions, 'join_type') ?: \Arr::get($this->conditions, 'join_type', 'left'),
+			'join_on'      => array(),
+			'columns'      => $this->select($alias_to, \Arr::get($conditions, 'select', false)),
+			'rel_name'     => strpos($rel_name, '.') ? substr($rel_name, strrpos($rel_name, '.') + 1) : $rel_name,
+			'relation'     => $this,
+			'where'        => \Arr::get($conditions, 'where', array()),
+			'order_by'     => \Arr::get($conditions, 'order_by') ?: \Arr::get($this->conditions, 'order_by', array()),
 		);
 
 		reset($this->key_to);
@@ -175,10 +175,11 @@ class BelongsTo extends Relation
 			// if any of the keys changed, reload the relationship - saving the object will save those keys
 			if ($changed)
 			{
+				//\Log::error('Change to ' . get_class($model_from) . ':' . $model_from->id . ' caused save of ' . $this->model_to . ':' . json_encode($new_rel_id));
 				// Attempt to load the new related object
 				if ( ! is_null($new_rel_id))
 				{
-					$rel_obj = call_user_func(array($this->model_to, 'find'), $new_rel_id);
+					$rel_obj = call_user_func_array(array($this->model_to, 'find'), array($new_rel_id, array('from_cache' => false)));
 					if (empty($rel_obj))
 					{
 						throw new \FuelException('New relation set on '.$this->model_from.' object wasn\'t found.');

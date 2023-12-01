@@ -89,7 +89,7 @@ class HasMany extends Relation
 			'primary_key'  => call_user_func(array($this->model_to, 'primary_key')),
 			'join_type'    => \Arr::get($conditions, 'join_type') ?: \Arr::get($this->conditions, 'join_type', 'left'),
 			'join_on'      => array(),
-			'columns'      => $this->select($alias_to),
+			'columns'      => $this->select($alias_to, \Arr::get($conditions, 'select', false)),
 			'rel_name'     => strpos($rel_name, '.') ? substr($rel_name, strrpos($rel_name, '.') + 1) : $rel_name,
 			'relation'     => $this,
 			'where'        => \Arr::get($conditions, 'where', array()),
@@ -208,10 +208,16 @@ class HasMany extends Relation
 		// if any original ids are left over in the array, they're no longer related - break them
 		foreach ($original_model_ids as $original_model_id)
 		{
+			$model_to_pk = call_user_func(array($this->model_to, 'primary_key'));
 			// if still loaded set this object's old relation's foreign keys to null
 			if ($original_model_id and $obj = call_user_func(array($this->model_to, 'find'),
-				count($this->key_to) == 1 ? array($original_model_id) : explode('][', substr($original_model_id, 1, -1))))
+				//count($this->key_to) == 1 ? array($original_model_id) : explode('][', substr($original_model_id, 1, -1))))
+				count($model_to_pk) == 1 ? array($original_model_id) : explode('][', substr($original_model_id, 1, -1))))
 			{
+				//delete relation
+				$obj->delete();
+				
+				/*
 				$frozen = $obj->frozen(); // only unfreeze/refreeze when it was frozen
 				$frozen and $obj->unfreeze();
 				foreach ($this->key_to as $fk)
@@ -219,9 +225,10 @@ class HasMany extends Relation
 					$obj->{$fk} = null;
 				}
 				$frozen and $obj->freeze();
-
+			
 				// cascading this change won't work here, save just the object with cascading switched off
 				$obj->save(false);
+				*/
 			}
 		}
 
@@ -230,6 +237,7 @@ class HasMany extends Relation
 		{
 			foreach ($models_to as $m)
 			{
+				//\Log::error('Change to ' . get_class($model_from) . ':' . $model_from->id . ' caused save of ' . get_class($m));
 				$m->save();
 			}
 		}

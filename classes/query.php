@@ -124,6 +124,11 @@ class Query
 	protected $from_cache = true;
 
 	/**
+	 * @var  bool  whether or not to flush cache for this (and related) object(s)
+	 */
+	protected $flush_cache = false;
+	
+	/**
 	 * Create a new instance of the Query class.
 	 *
 	 * @param	string  $model        Name of the model this instance has to operate on
@@ -193,6 +198,9 @@ class Query
 				case 'from_cache':
 					$this->from_cache($val);
 					break;
+				case 'flush_cache':
+					$this->flush_cache($val);
+					break;
 			}
 		}
 	}
@@ -211,6 +219,20 @@ class Query
 		return $this;
 	}
 
+	/**
+	 * Enables or disables the flushing of the object cache for this query
+	 *
+	 * @param  bool  $cache    Whether or not to flush the object cache on this query
+	 *
+	 * @return  Query
+	 */
+	public function flush_cache($cache = false)
+	{
+		$this->flush_cache = (bool) $cache;
+	
+		return $this;
+	}
+	
 	/**
 	 * Select which properties are included, each as its own param. Or don't give input to retrieve
 	 * the current selection.
@@ -1248,6 +1270,11 @@ class Query
 	 */
 	public function get()
 	{
+		// Check whether to flush cache
+		if ($this->flush_cache) {
+			Model::flush_cache($this->model);
+		}
+		
 		// Get the columns
 		$columns = $this->select();
 

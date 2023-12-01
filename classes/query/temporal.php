@@ -26,6 +26,9 @@ class Query_Temporal extends Query
 	protected $timestamp = null;
 	protected $timestamp_end_col = null;
 	protected $timestamp_start_col = null;
+	protected $type = null;
+	protected $parentStart = null;
+	protected $parentEnd = null;
 
 	/**
 	 * Sets the timestamp to be used on joins. If set to null the latest revision
@@ -38,11 +41,14 @@ class Query_Temporal extends Query
 	public function set_temporal_properties(
 		$stamp,
 		$timestamp_end_col,
-		$timestamp_start_col)
+		$timestamp_start_col,
+		$type = 'effectiveAt'
+		)
 	{
 		$this->timestamp = $stamp;
 		$this->timestamp_end_col = $timestamp_end_col;
 		$this->timestamp_start_col = $timestamp_start_col;
+		$this->type = $type;
 
 		return $this;
 	}
@@ -61,8 +67,20 @@ class Query_Temporal extends Query
 			//Add the needed conditions to allow for temporal-ness
 			$table      = $join_result[$name]['table'][1];
 			$query_time = \DB::escape($this->timestamp);
-			$join_result[$name]['join_on'][] = array("$table.$this->timestamp_start_col", '<=', $query_time);
-			$join_result[$name]['join_on'][] = array("$table.$this->timestamp_end_col", '>=', $query_time);
+			switch ($this->type) {
+				case 'effectiveTo':
+					$join_result[$name]['join_on'][] = array("$table.$this->timestamp_start_col", '<', $query_time);
+					$join_result[$name]['join_on'][] = array("$table.$this->timestamp_end_col", '>=', $query_time);
+					break;
+				case 'effectiveAt':
+					$join_result[$name]['join_on'][] = array("$table.$this->timestamp_start_col", '<=', $query_time);
+					$join_result[$name]['join_on'][] = array("$table.$this->timestamp_end_col", '>', $query_time);
+					break;
+				case 'allRevisions':
+					break;
+				default:
+					throw new Exception ("Type of join for temporal not specified");
+			}
 		}
 
 		return $join_result;

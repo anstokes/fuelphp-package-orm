@@ -98,6 +98,10 @@ class Observer_Validation extends Observer
 		$primary_keys = is_object($obj) ? $obj->primary_key() : $class::primary_key();
 		$primary_key = count($primary_keys) === 1 ? reset($primary_keys) : false;
 		$properties = is_object($obj) ? $obj->properties() : $class::properties();
+		
+		// Add additional fields (from customisations)
+		$customFields = \Model_CustomisationArea::getAllCustomisedFields($class::customisation_areas());
+		$properties = array_merge($properties, $customFields);
 
 		if ($tabular_form and $primary_key and ! is_object($obj))
 		{
@@ -155,6 +159,29 @@ class Observer_Validation extends Observer
 					}
 
 					call_fuel_func_array(array($field, 'add_rule'), $args);
+					// set field error message, if specified
+					if (isset($settings['validation_error'])) {
+						call_fuel_func_array(array($field, 'set_error_message'), array(false, $settings['validation_error']));
+					}
+				}
+
+				/*
+				// add company specified mandatory fields; original method (multiple queries)
+				if ($mandatoryFields = \Model_MandatoryFields::fetchMandatoryFields($class, $p)) {
+					foreach ($mandatoryFields as $mandatoryField) {
+						call_fuel_func_array(array($field, 'add_rule'), array('required'));
+					}
+				}
+				*/
+			}
+		}
+		
+		// add company specified mandatory fields; reduces SQL queries
+		if ($mandatoryFields = \Model_MandatoryFields::fetchMandatoryFields($class)) {
+			foreach ($mandatoryFields as $mandatoryField) {
+				//check that field exists in model
+				if (isset($properties[$mandatoryField])) {
+					call_fuel_func_array(array($fieldset->field($mandatoryField), 'add_rule'), array('required'));
 				}
 			}
 		}

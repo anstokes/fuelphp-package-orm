@@ -150,14 +150,14 @@ class Model_Temporal extends Model
 		// to get the revision before.
 		self::disable_primary_key_check();
 
-		$query = static::query()
+		$query = static::query(array('findAllRevisions'=>true))
 			->where('id', $id)
 			->where($timestamp_start_name, '<=', $timestamp)
 			->where($timestamp_end_name, '>', $timestamp);
 		self::enable_primary_key_check();
 
 		//Make sure the temporal stuff is activated
-		$query->set_temporal_properties($timestamp, $timestamp_end_name, $timestamp_start_name);
+		$query->set_temporal_properties($timestamp, $timestamp_end_name, $timestamp_start_name, 'effectiveAt');
 
 		foreach ($relations as $relation)
 		{
@@ -230,24 +230,31 @@ class Model_Temporal extends Model
 	{
 		$timestamp_start_name = static::temporal_property('start_column');
 		$timestamp_end_name = static::temporal_property('end_column');
-		$max_timestamp = static::temporal_property('max_timestamp');
-
-		$query = Query_Temporal::forge(get_called_class(), static::connection(), $options)
-			->set_temporal_properties($max_timestamp, $timestamp_end_name, $timestamp_start_name);
 
 		//Check if we need to add filtering
 		$class = get_called_class();
-		$timestamp = \Arr::get(static::$_lazy_filtered_classes, $class, null);
-
-		if( ! is_null($timestamp))
-		{
+		
+		$query = Query_Temporal::forge(get_called_class(), static::connection(), $options);
+		
+		if (isset($options['effectiveTo']) && $options['effectiveTo']) {
+			// Effective until the given time
+			$timestamp = intval($options['effectiveTo']);
+			$type = 'effectiveTo';
+			$query->where($timestamp_start_name, '<', $timestamp)
+					->where($timestamp_end_name, '>=', $timestamp);
+		} elseif (isset($options['findAllRevisions']) && $options['findAllRevisions']) {
+			// No time filtering
+			$type = 'allRevisions';
+			$timestamp = null;
+		} else {
+			//only available now
+			$timestamp = time();
 			$query->where($timestamp_start_name, '<=', $timestamp)
-				->where($timestamp_end_name, '>', $timestamp);
+					->where($timestamp_end_name, '>', $timestamp);
+			$type = 'effectiveAt';
 		}
-		elseif(static::get_primary_key_status() and ! static::get_primary_key_id_only_status())
-		{
-			$query->where($timestamp_end_name, $max_timestamp);
-		}
+		
+		$query->set_temporal_properties($timestamp, $timestamp_end_name, $timestamp_start_name, $type);
 
 		return $query;
 	}
@@ -262,7 +269,7 @@ class Model_Temporal extends Model
 	 */
 	public static function find_revisions_between($id, $earliestTime = null, $latestTime = null)
 	{
-		$timestamp_start_name = static::temporal_property('start_column');
+		$timestamp_end_name = static::temporal_property('end_column');
 		$max_timestamp = static::temporal_property('max_timestamp');
 
 		if ($earliestTime == null)
@@ -277,10 +284,10 @@ class Model_Temporal extends Model
 
 		static::disable_primary_key_check();
 		//Select all revisions within the given range.
-		$query = static::query()
+		$query = static::query(array('findAllRevisions'=>true))
 			->where('id', $id)
-			->where($timestamp_start_name, '>=', $earliestTime)
-			->where($timestamp_start_name, '<=', $latestTime);
+			->where($timestamp_end_name, '>=', $earliestTime)
+			->where($timestamp_end_name, '<=', $latestTime);
 		static::enable_primary_key_check();
 
 		$revisions = $query->get();
@@ -298,7 +305,7 @@ class Model_Temporal extends Model
 	 * @param array $options
 	 * @return type
 	 */
-	public static function find($id = null, array $options = array())
+	public static function find($id = 'all', array $options = array())
 	{
 		$timestamp_end_name = static::temporal_property('end_column');
 		$max_timestamp = static::temporal_property('max_timestamp');
@@ -321,7 +328,9 @@ class Model_Temporal extends Model
 				break;
 		}
 
-		$options['where'][] = array($timestamp_end_name, $max_timestamp);
+		if (!isset($options['findAllRevisions']) || !$options['findAllRevisions']) {
+			$options['where'][] = array($timestamp_end_name, $max_timestamp);
+		}
 
 		static::enable_id_only_primary_key();
 		$result = parent::find($id, $options);
@@ -505,13 +514,20 @@ class Model_Temporal extends Model
 	/**
 	 * Deletes all revisions of this entity permantly.
 	 */
-	public function purge()
+	public function purge($keepLatest = false)
 	{
 		// Get a clean query object so there's no temporal filtering
 		$query = parent::query();
-		// Then select and delete
-		return $query->where('id', $this->id)
-			->delete();
+		if (!$keepLatest) {
+			// Then select and delete
+			return $query->where('id', $this->id)
+				->delete();
+		} else {
+			// Select and delete all but latest
+			return $query->where('id', $this->id)
+				->where('valid_to', '<=', time())
+				->delete();
+		}
 	}
 
 	/**
@@ -604,20 +620,32 @@ class Model_Temporal extends Model
 
 			if ($relCascade)
 			{
-				if(get_class($rel) != 'Orm\ManyMany')
+				if(get_class($rel) == 'Orm\HasMany')
 				{
 					// Loop through and call delete on all the models
 					foreach($rel->get($this) as $model)
 					{
+						if (method_exists($model, "delete")) {
+							$model->delete($cascade);
+						}
+					}
+				}
+				elseif(get_class($rel) == 'Orm\HasOne')
+				{
+					// Single relation, delete the model
+					$model = $rel->get($this);
+					if (method_exists($model, "delete")) {
 						$model->delete($cascade);
 					}
 				}
 			}
 		}
 		$this->unfreeze();
-
+		$this->_temporal_deletion = true;
+		
 		parent::save();
 
+		$this->_temporal_deletion = false;
 		$this->observe('after_delete');
 
 		// Make sure the transaction is committed if needed

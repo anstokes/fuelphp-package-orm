@@ -85,13 +85,23 @@ abstract class Relation
 	 * @param   string
 	 * @return  array
 	 */
-	public function select($table)
+	public function select($table, $fields = false)
 	{
 		$props = call_user_func(array($this->model_to, 'properties'));
 		$i = 0;
 		$properties = array();
+		if ($fields !== false) {
+			//ensure primary key(s) included
+			$fields = array_merge($fields, call_user_func(array($this->model_to, 'primary_key')));
+		} 
 		foreach ($props as $pk => $pv)
 		{
+			if ($fields !== false && is_array($fields)) {
+				if (!in_array($pk, $fields)) {
+					//skip this column
+					continue;
+				}
+			}
 			$properties[] = array($table.'.'.$pk, $table.'_c'.$i);
 			$i++;
 		}

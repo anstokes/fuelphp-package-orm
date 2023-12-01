@@ -250,6 +250,63 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	}
 
 	/**
+	 * Flush the cache for an earlier loaded class
+	 * 
+	 * @param	null|string  $class
+	 * @return	boolean
+	 */
+	public static function flush_cache($class = null, $includeRelations = true)
+	{
+		$class = $class ?: get_called_class();
+
+		//check for related classes
+		$classObject = $class::forge();
+		if ($includeRelations) {
+			foreach ($classObject->relations() as $relation) {
+				if (get_class($relation)=='Orm\HasOne' || get_class($relation)=='Orm\HasMany') {
+					//flush related class
+					static::flush_cache($relation->model_to);
+				}
+			}
+		}
+
+		if ( ! empty(static::$_cached_objects[$class])) {
+			unset(static::$_cached_objects[$class]);
+		}
+		
+		$result = ( ! empty(static::$_cached_objects[$class])) ? false : true;
+		
+		return $result;
+	}
+	
+	/**
+	 * Get the customisation area(s) of this class
+	 * 
+	 * @return	array
+	 */
+	public static function customisation_areas()
+	{
+		if (isset(static::$_customisation_areas) && static::$_customisation_areas)
+		{
+			if (is_string(static::$_customisation_areas))
+			{
+				// Convert string to array, just in case of singular
+				return array(static::$_customisation_areas);
+			}
+			else
+			{
+				// Customisation area(s) should generally be an array
+				return static::$_customisation_areas;
+			}
+		}
+		else 
+		{
+			// No customisation area(s)
+			return array();
+		}
+	}
+	
+	/**
 	 * Get the primary key(s) of this class
 	 *
 	 * @return  array
@@ -474,6 +531,11 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	 */
 	public static function observers($specific = null, $default = null)
 	{
+		// Check if observers are disabled
+		if (!\Fuel::$observers) {
+			return array();
+		}
+		
 		$class = get_called_class();
 
 		if ( ! array_key_exists($class, static::$_observers_cached))
@@ -654,6 +716,21 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	{
 		return static::query()->min($key ?: static::primary_key());
 	}
+	
+	public static function solrCore()
+	{
+		return (isset(static::$_solr_core) ? static::$_solr_core : false);
+	}
+	
+	public static function solrProperties()
+	{
+		return (isset(static::$_solr_properties) ? static::$_solr_properties : array());
+	}
+	
+	public static function reportable()
+	{
+		return (isset(static::$_is_reportable) ? static::$_is_reportable : false);
+	}
 
 	public static function __callStatic($method, $args)
 	{
@@ -805,6 +882,11 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	 * @var  string  view name when used
 	 */
 	protected $_view;
+	
+	/**
+	 * @var  boolean  temporal deletion flag
+	 */
+	protected $_temporal_deletion = false;
 
 	/**
 	 * Constructor
@@ -959,7 +1041,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 		{
 			if ($this->_frozen)
 			{
-				throw new FrozenObject('No changes allowed.');
+				throw new FrozenObject('No changes allowed to '.get_class($this).(!$this->is_new() ? '('.$this->implode_pk($this->_original).')' : '').'.');
 			}
 			$this->_data_relations = $rels;
 		}
@@ -1218,7 +1300,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	{
 		if ($this->_frozen)
 		{
-			throw new FrozenObject('No changes allowed.');
+			throw new FrozenObject('No changes allowed '.get_class($this).(!$this->is_new() ? '('.$this->implode_pk($this->_original).')' : '').'.');
 		}
 
 		if (is_array($property))
@@ -1342,7 +1424,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 				{
 					$rel->save($this, $this->{$rel_name},
 						array_key_exists($rel_name, $this->_original_relations) ? $this->_original_relations[$rel_name] : null,
-						true, is_array($cascade) ? in_array($rel_name, $cascade) : $cascade
+						($this->_temporal_deletion ? false : true), is_array($cascade) ? in_array($rel_name, $cascade) : $cascade
 					);
 				}
 			}
@@ -1783,10 +1865,13 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	 */
 	public function get_diff()
 	{
+		// Ignore certain fields / differences
+		$ignoreFields = array(); //array('modified_by');
+
 		$diff = array(0 => array(), 1 => array());
 		foreach ($this->_data as $key => $val)
 		{
-			if ($this->is_changed($key))
+			if (!in_array($key, $ignoreFields) && $this->is_changed($key))
 			{
 				$diff[0][$key] = array_key_exists($key, $this->_original) ? $this->_original[$key] : null;
 				$diff[1][$key] = $val;
@@ -2001,12 +2086,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 					}
 				}
 			}
-			elseif (property_exists($this, '_eav') and ! empty(static::$_eav))
-			{
-				$this->_set_eav($property, $value);
-			}
-			else
-			{
+			elseif (!$this->_set_eav($property, $value)) {
 				$this->_custom_data[$property] = $value;
 			}
 		}
@@ -2252,7 +2332,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 		$class = get_called_class();
 
 		// don't do anything unless we actually have an EAV container
-		if (property_exists($class, '_eav'))
+		if (property_exists($class, '_eav') && !empty(static::$_eav))
 		{
 			// loop through the defined EAV containers
 			foreach (static::$_eav as $rel => $settings)
@@ -2280,6 +2360,26 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 				$attr = isset($settings['attribute']) ? $settings['attribute'] : 'attribute';
 				$val = isset($settings['value']) ? $settings['value'] : 'value';
 
+				// If a whitelist exists, only set eav where specified
+				if (property_exists($class, '_eav_whiteList')) {
+					if (!is_array(static::$_eav_whiteList)) {
+						throw new \OutOfBoundsException('EAV whitelist must be an array in '.get_class($this).'.');
+					}
+					if (!in_array($attribute, static::$_eav_whiteList)) {
+						return false;
+					}
+				}
+				
+				// If a blacklist exists, only set eav where not specified
+				if (property_exists($class, '_eav_blackList')) {
+					if (!is_array(static::$_eav_blackList)) {
+						throw new \OutOfBoundsException('EAV blacklist must be an array in '.get_class($this).'.');
+					}
+					if (in_array($attribute, static::$_eav_blackList)) {
+						return false;
+					}
+				}
+				
 				// loop over the resultset
 				foreach ($this->{$relation->name} as $key => $record)
 				{
@@ -2309,6 +2409,7 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 	 * Implementation of ArrayAccess
 	 **************************************************************************/
 
+	#[\ReturnTypeWillChange]
 	public function offsetSet($offset, $value)
 	{
 		try
@@ -2321,16 +2422,19 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 		}
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetExists($offset)
 	{
 		return $this->__isset($offset);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetUnset($offset)
 	{
 		$this->__unset($offset);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function offsetGet($offset)
 	{
 		try
@@ -2349,27 +2453,32 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 
 	protected $_iterable = array();
 
+	#[\ReturnTypeWillChange]
 	public function rewind()
 	{
 		$this->_iterable = array_merge($this->_custom_data, $this->_data, $this->_data_relations);
 		reset($this->_iterable);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function current()
 	{
 		return current($this->_iterable);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function key()
 	{
 		return key($this->_iterable);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function next()
 	{
 		return next($this->_iterable);
 	}
 
+	#[\ReturnTypeWillChange]
 	public function valid()
 	{
 		return key($this->_iterable) !== null;
