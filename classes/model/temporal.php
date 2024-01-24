@@ -231,11 +231,9 @@ class Model_Temporal extends Model
 		$timestamp_start_name = static::temporal_property('start_column');
 		$timestamp_end_name = static::temporal_property('end_column');
 
-		//Check if we need to add filtering
-		$class = get_called_class();
-		
 		$query = Query_Temporal::forge(get_called_class(), static::connection(), $options);
 		
+		// Check if we need to add filtering
 		if (isset($options['effectiveTo']) && $options['effectiveTo']) {
 			// Effective until the given time
 			$timestamp = intval($options['effectiveTo']);
@@ -247,7 +245,7 @@ class Model_Temporal extends Model
 			$type = 'allRevisions';
 			$timestamp = null;
 		} else {
-			//only available now
+			// Only available now
 			$timestamp = time();
 			$query->where($timestamp_start_name, '<=', $timestamp)
 					->where($timestamp_end_name, '>', $timestamp);
@@ -397,11 +395,13 @@ class Model_Temporal extends Model
 		// If this is an update then set a new PK, save and then insert a new row
 		else
 		{
+			/*
 			// run the before save observers before checking the diff
 			$this->observe('before_save');
 
 			// then disable it so it doesn't get executed by parent::save()
 			$this->disable_event('before_save');
+			*/
 
 			$diff = $this->get_diff();
 
@@ -444,8 +444,10 @@ class Model_Temporal extends Model
 				$result = parent::save($cascade, $use_transaction);
 			}
 
+			/*
 			// make sure the before save event is enabled again
 			$this->enable_event('before_save');
+			*/
 
 			return $result;
 		}
@@ -634,7 +636,7 @@ class Model_Temporal extends Model
 				{
 					// Single relation, delete the model
 					$model = $rel->get($this);
-					if ($model && method_exists($model, "delete")) {
+					if (method_exists($model, "delete")) {
 						$model->delete($cascade);
 					}
 				}

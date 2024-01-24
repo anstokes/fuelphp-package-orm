@@ -1789,8 +1789,9 @@ class Model implements \ArrayAccess, \Iterator, \Sanitization
 			{
 				if (array_key_exists($p, $this->_original))
 				{
-					if ((array_key_exists('type', $properties[$p]) and $properties[$p]['type'] == 'int') or
-						(array_key_exists('data_type', $properties[$p]) and $properties[$p]['data_type'] == 'int'))
+					$looseMatchTypes = array('int', 'float', 'decimal', 'bool');
+					if ((array_key_exists('type', $properties[$p]) and in_array($properties[$p]['type'], $looseMatchTypes)) or
+						(array_key_exists('data_type', $properties[$p]) and in_array($properties[$p]['data_type'], $looseMatchTypes)))
 					{
 						if ($this->{$p} != $this->_original[$p])
 						{
