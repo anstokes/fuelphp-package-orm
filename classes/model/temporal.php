@@ -636,7 +636,7 @@ class Model_Temporal extends Model
 				{
 					// Single relation, delete the model
 					$model = $rel->get($this);
-					if (method_exists($model, "delete")) {
+					if ($model && method_exists($model, "delete")) {
 						$model->delete($cascade);
 					}
 				}
